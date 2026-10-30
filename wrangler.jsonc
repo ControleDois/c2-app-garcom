@@ -1,0 +1,10 @@
+// Hospedagem no Cloudflare (Workers com arquivos estáticos): o build gera o `dist` e o
+// `npx wrangler deploy` publica. Qualquer caminho cai no index.html, que decide a tela pela URL.
+{
+  "name": "controledois-garcom",
+  "compatibility_date": "2026-10-23",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

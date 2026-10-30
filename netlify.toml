@@ -1,0 +1,7 @@
+# Enquanto o site ainda é servido pelo Netlify: qualquer caminho abre o index.html. Fica aqui e
+# não em public/_redirects porque o Cloudflare recusa essa regra no _redirects; no Cloudflare
+# quem faz isso é o wrangler.jsonc.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
