@@ -217,6 +217,7 @@ export async function fetchTables(token: string, companyId: string): Promise<Foo
 
 interface SyncPayload {
   device_id: string
+  source: 'garcom'
   id: string
   companyId: string
   number: number
@@ -237,6 +238,7 @@ export function syncTable(token: string, companyId: string, payload: SyncPayload
 function basePayload(table: Pick<FoodTable, 'id' | 'number' | 'opened_at'>, companyId: string): SyncPayload {
   return {
     device_id: getSocketId() || '',
+    source: 'garcom',
     id: table.id,
     companyId,
     number: table.number,
