@@ -59,6 +59,8 @@ export interface FoodTable {
   sales: { id: string; total: number }[]
   audit: TableAudit[]
   isDelivery: boolean
+  // Nome do cliente colocado no PDV para identificar a mesa
+  customerName: string | null
 }
 
 export const DELIVERY_TABLE_MIN = 9000
@@ -140,7 +142,8 @@ export function normalizeRemoteTable(raw: any): FoodTable {
       moment: audit.moment || audit.created_at || null,
       author_name: audit.user?.name || audit.author_name || null,
     })),
-    isDelivery: Boolean(delivery) || (number >= DELIVERY_TABLE_MIN && number <= DELIVERY_TABLE_MAX),
+    isDelivery: raw.kind === 'delivery' || Boolean(delivery) || (number >= DELIVERY_TABLE_MIN && number <= DELIVERY_TABLE_MAX),
+    customerName: raw.customer_name || null,
   }
 }
 
@@ -298,6 +301,7 @@ export async function openTable(token: string, companyId: string, number: number
     ...table,
     status: 'open_empty',
     closed_at: null,
+    customerName: null,
     items: [],
     orders: [],
     partials: [],

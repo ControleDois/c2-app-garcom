@@ -144,7 +144,7 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ScreenHeader
-        title={`Mesa ${current.number}`}
+        title={`Mesa ${current.number}${current.customerName ? ` · ${current.customerName}` : ''}`}
         subtitle={items.length ? `${items.length} ${items.length === 1 ? 'item' : 'itens'}` : 'Sem itens'}
         onBack={() => navigate('/mesas', { replace: true })}
         right={

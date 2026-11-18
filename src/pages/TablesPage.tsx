@@ -175,7 +175,12 @@ export function TablesPage({
                   }`}
                 >
                   <div className="flex w-full items-start justify-between">
-                    <span className="text-[26px] leading-none font-extrabold text-[var(--ink)]">{table.number}</span>
+                    <span className="min-w-0">
+                      <span className="block text-[26px] leading-none font-extrabold text-[var(--ink)]">{table.number}</span>
+                      {table.customerName && (
+                        <span className="mt-1 block truncate text-[12.5px] font-bold text-[var(--blue-700)]">{table.customerName}</span>
+                      )}
+                    </span>
                     {bill && (
                       <span className="rounded-full bg-[var(--red-100)] px-2 py-0.5 text-[10px] font-extrabold text-[var(--red-500)]">
                         CONTA
