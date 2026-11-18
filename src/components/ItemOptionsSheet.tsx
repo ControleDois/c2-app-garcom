@@ -39,13 +39,20 @@ export function ItemOptionsSheet({ product, onClose, onConfirm }: Props) {
 
   function set(groupId: string, option: MenuComplementOption, value: number, single: boolean) {
     setError(null)
-    setChosen((current) => {
-      let list = current.filter((item) => !(item.groupId === groupId && item.option.id === option.id))
-      if (single) list = list.filter((item) => item.groupId !== groupId)
-      if (value > 0) list.push({ groupId, option, quantity: value })
-      return list
-    })
+    const previous = countOf(groupId, option.id)
+    let list = chosen.filter((item) => !(item.groupId === groupId && item.option.id === option.id))
+    if (single) list = list.filter((item) => item.groupId !== groupId)
+    if (value > 0) list.push({ groupId, option, quantity: value })
+    setChosen(list)
     navigator.vibrate?.(8)
+    // Chegou no limite do grupo: rola sozinho para o próximo (ou para a observação).
+    const group = groups.find((item) => item.id === groupId)
+    const total = list.filter((item) => item.groupId === groupId).reduce((sum, item) => sum + item.quantity, 0)
+    if (group && value > previous && group.maximum > 0 && total >= group.maximum) {
+      const next = groups[groups.findIndex((item) => item.id === groupId) + 1]
+      const element = document.getElementById(next ? `grupo-${next.id}` : 'grupo-observacao')
+      if (element) setTimeout(() => element.scrollIntoView({ behavior: 'smooth', block: 'start' }), 180)
+    }
   }
 
   function confirm() {
@@ -115,7 +122,7 @@ export function ItemOptionsSheet({ product, onClose, onConfirm }: Props) {
             const picked = chosen.filter((item) => item.groupId === group.id).reduce((sum, item) => sum + item.quantity, 0)
             const done = minimum > 0 && picked >= minimum
             return (
-              <section key={group.id} id={`grupo-${group.id}`} className="mt-3">
+              <section key={group.id} id={`grupo-${group.id}`} className="mt-3 scroll-mt-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div>
                     <p className="text-[15px] font-extrabold text-[var(--ink)]">{group.name}</p>
@@ -193,7 +200,7 @@ export function ItemOptionsSheet({ product, onClose, onConfirm }: Props) {
             )
           })}
 
-          <p className="mt-5 mb-2 text-[15px] font-extrabold text-[var(--ink)]">Alguma observação?</p>
+          <p id="grupo-observacao" className="mt-5 mb-2 scroll-mt-3 text-[15px] font-extrabold text-[var(--ink)]">Alguma observação?</p>
           <div className="mb-2 flex flex-wrap gap-1.5">
             {['Sem cebola', 'Sem gelo', 'Para viagem'].map((chip) => (
               <button

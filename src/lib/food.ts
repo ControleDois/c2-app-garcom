@@ -18,6 +18,9 @@ export interface TableItem {
   food_order_id: string | null
   user_id: string | null
   moment: string | null
+  // Já pago num recebimento por itens (a mesa continua aberta).
+  received: boolean
+  author_name: string | null
 }
 
 export interface TablePayment {
@@ -41,6 +44,7 @@ export interface TableAudit {
   reason: string
   type: AuditType
   moment: string | null
+  author_name: string | null
 }
 
 export interface FoodTable {
@@ -96,6 +100,8 @@ export function normalizeRemoteTable(raw: any): FoodTable {
     food_order_id: item.food_order_id ?? null,
     user_id: item.user_id ?? null,
     moment: item.moment || item.created_at || null,
+    received: Boolean(item.is_received ?? item.received),
+    author_name: item.user?.name || item.author_name || null,
   }))
 
   const activeCount = items.filter((item) => !item.removed).length
@@ -130,8 +136,9 @@ export function normalizeRemoteTable(raw: any): FoodTable {
       id: audit.id,
       description: audit.history || audit.description || '',
       reason: audit.reason || '',
-      type: (audit.type as AuditType) || 'default',
+      type: (audit.type as AuditType) || AUDIT_TYPES[Number(audit.status)] || 'default',
       moment: audit.moment || audit.created_at || null,
+      author_name: audit.user?.name || audit.author_name || null,
     })),
     isDelivery: Boolean(delivery) || (number >= DELIVERY_TABLE_MIN && number <= DELIVERY_TABLE_MAX),
   }
@@ -162,6 +169,35 @@ export function billRequested(table: FoodTable): boolean {
       .sort()
       .pop() ?? ''
   return table.audit.some((entry) => entry.description === BILL_REQUESTED && (entry.moment ?? '') >= lastOrder)
+}
+
+const AUDIT_TYPES: Record<number, AuditType> = { 0: 'default', 1: 'success', 2: 'danger', 3: 'warning' }
+
+// Último lançamento de item (ou a abertura, se ainda não pediu nada).
+export function lastOrderAt(table: FoodTable): string {
+  const moments = activeItems(table)
+    .map((item) => item.moment ?? '')
+    .filter(Boolean)
+    .sort()
+  return moments[moments.length - 1] ?? table.opened_at
+}
+
+export function minutesSince(iso: string | null | undefined, now = Date.now()): number {
+  if (!iso) return 0
+  const diff = Math.floor((now - new Date(iso).getTime()) / 60000)
+  return Number.isFinite(diff) && diff > 0 ? diff : 0
+}
+
+export function formatMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
+}
+
+// Mesa com itens há tempo demais sem pedir nada (Ajustes do PDV; 0 = desligado).
+export function idleAlert(table: FoodTable, limitMinutes: number, now = Date.now()): number | null {
+  if (!limitMinutes || activeItems(table).length === 0) return null
+  const idle = minutesSince(lastOrderAt(table), now)
+  return idle >= limitMinutes ? idle : null
 }
 
 export function lastActivity(table: FoodTable): string {
@@ -391,13 +427,18 @@ export function receivePayment(
   table: FoodTable,
   payments: TablePayment[],
   closeTable: boolean,
-  author: Author
+  author: Author,
+  receivedItems: TableItem[] = []
 ) {
   const received = Math.round(payments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100
   const subtotal = tableSubtotal(table)
   const partialBefore = tablePartialTotal(table)
   const moment = nowIso()
-  const description = closeTable ? 'RECEBIMENTO TOTAL' : 'RECEBIMENTO PARCIAL'
+  const description = closeTable
+    ? 'RECEBIMENTO TOTAL'
+    : receivedItems.length
+      ? `RECEBEU ${receivedItems.map((item) => `${item.quantity} ${item.name}`).join(', ')}`.slice(0, 250)
+      : 'RECEBIMENTO PARCIAL'
 
   const partial = {
     id: newId(),
@@ -408,7 +449,7 @@ export function receivePayment(
     received_amount: received,
     author: author.id,
     author_name: author.name,
-    item_ids: [],
+    item_ids: receivedItems.map((item) => item.id),
     payments,
   }
 
@@ -418,6 +459,26 @@ export function receivePayment(
     closed_at: closeTable ? moment : null,
     partials: [partial],
     audit: [auditEntry(author, description, 'success')],
+  }
+  if (receivedItems.length) {
+    payload.items = receivedItems.map((item) => ({
+      id: item.id,
+      food_order_id: item.food_order_id,
+      user_id: item.user_id,
+      item: item.item,
+      product_id: item.product_id,
+      code: item.product_code,
+      product_code: item.product_code,
+      name: item.name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total: item.total,
+      removed: false,
+      is_received: true,
+      pending_print: false,
+      observation: item.observation || undefined,
+      moment: item.moment,
+    }))
   }
 
   if (closeTable) {

@@ -8,6 +8,7 @@ import {
   tablePartialTotal,
   tableRemaining,
   tableSubtotal,
+  activeItems,
   type FoodTable,
   type TablePayment,
 } from '../lib/food'
@@ -37,6 +38,9 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
   const [cashGiven, setCashGiven] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Receber por itens: só os itens marcados (a mesa continua aberta com o resto).
+  const [byItems, setByItems] = useState(false)
+  const [selected, setSelected] = useState<string[]>([])
 
   if (!table) {
     return (
@@ -50,7 +54,9 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
   const current = table
   const subtotal = tableSubtotal(current)
   const partial = tablePartialTotal(current)
-  const total = tableRemaining(current)
+  const openItems = activeItems(current).filter((item) => !item.received)
+  const chosenItems = openItems.filter((item) => selected.includes(item.id))
+  const total = byItems ? round2(chosenItems.reduce((sum, item) => sum + item.total, 0)) : tableRemaining(current)
   const paid = round2(payments.reduce((sum, payment) => sum + payment.amount, 0))
   const remaining = round2(Math.max(0, total - paid))
   const typedAmount = parseMoney(amount) ?? 0
@@ -76,10 +82,15 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
     setBusy(true)
     setError(null)
     try {
-      await receivePayment(session.token.token, company.id, current, payments, closeTable, {
-        id: person.id,
-        name: person.name,
-      })
+      await receivePayment(
+        session.token.token,
+        company.id,
+        current,
+        payments,
+        closeTable,
+        { id: person.id, name: person.name },
+        byItems ? chosenItems : []
+      )
       await onRefresh()
       navigate('/mesas', { replace: true })
     } catch (err) {
@@ -111,6 +122,63 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
           </div>
         </div>
 
+        <div className="mt-3 flex gap-1.5 rounded-full bg-[var(--surface)] p-1 shadow-[var(--card-shadow)]">
+          {[
+            { label: 'Conta inteira', value: false },
+            { label: 'Por itens', value: true },
+          ].map((option) => (
+            <button
+              key={option.label}
+              type="button"
+              onClick={() => {
+                setByItems(option.value)
+                setPayments([])
+                setAmount('')
+              }}
+              className={`h-10 flex-1 rounded-full text-[13.5px] font-bold ${
+                byItems === option.value ? 'bg-[var(--blue-500)] text-white' : 'text-[var(--ink-soft)]'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {byItems && (
+          <div className="mt-3 rounded-2xl bg-[var(--surface)] shadow-[var(--card-shadow)]">
+            <p className="px-4 pt-3.5 text-[13px] font-bold text-[var(--ink)]">Marque o que vai ser pago agora</p>
+            <ul className="divide-y divide-[var(--border)]">
+              {openItems.map((item) => {
+                const checked = selected.includes(item.id)
+                return (
+                  <li key={item.id}>
+                    <label className="flex cursor-pointer items-center gap-3 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setPayments([])
+                          setSelected((current) => (checked ? current.filter((id) => id !== item.id) : [...current, item.id]))
+                        }}
+                        className="h-5 w-5 flex-none accent-[var(--blue-500)]"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[14px] font-bold text-[var(--ink)]">
+                          {item.quantity}x {item.name}
+                        </span>
+                        {item.observation && <span className="block truncate text-[12px] text-[var(--muted)]">{item.observation}</span>}
+                      </span>
+                      <span className="text-[14px] font-extrabold">{formatCurrency(item.total)}</span>
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+            {openItems.length === 0 && <p className="px-4 pb-4 text-[13px] text-[var(--muted)]">Todos os itens já foram pagos.</p>}
+          </div>
+        )}
+
+        {!byItems && (
         <div className="mt-3 rounded-2xl bg-[var(--surface)] p-4 shadow-[var(--card-shadow)]">
           <p className="text-[13px] font-bold text-[var(--ink)]">Dividir a conta</p>
           <div className="mt-2 flex items-center gap-3">
@@ -132,6 +200,7 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
             )}
           </div>
         </div>
+        )}
 
         {remaining > 0 && (
           <div className="mt-3 rounded-2xl bg-[var(--surface)] p-4 shadow-[var(--card-shadow)]">
@@ -230,6 +299,16 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
             {formatCurrency(remaining)}
           </span>
         </div>
+        {byItems ? (
+          <button
+            type="button"
+            disabled={busy || !person || chosenItems.length === 0 || payments.length === 0 || remaining > 0.009}
+            onClick={() => submit(false)}
+            className="h-13 rounded-xl bg-[var(--green-600)] text-[15px] font-extrabold text-white disabled:opacity-50"
+          >
+            {busy ? 'Registrando…' : `Receber ${chosenItems.length} ${chosenItems.length === 1 ? 'item' : 'itens'} (mesa continua aberta)`}
+          </button>
+        ) : (
         <button
           type="button"
           disabled={busy || !person || payments.length === 0 || remaining > 0.009}
@@ -238,7 +317,8 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
         >
           {busy ? 'Registrando…' : 'Receber e fechar a mesa'}
         </button>
-        {remaining > 0.009 && payments.length > 0 && (
+        )}
+        {!byItems && remaining > 0.009 && payments.length > 0 && (
           <button
             type="button"
             disabled={busy || !person}

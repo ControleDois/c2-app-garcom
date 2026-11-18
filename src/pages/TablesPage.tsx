@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   activeItems,
   billRequested,
+  formatMinutes,
+  idleAlert,
   lastActivity,
+  minutesSince,
   openTable,
   tableRemaining,
   tableSubtotal,
@@ -39,6 +42,13 @@ export function TablesPage({
   const [opening, setOpening] = useState(false)
   const [openError, setOpenError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  const limit = Number(company.config?.food_table_idle_alert_minutes ?? 30)
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(timer)
+  }, [])
 
   const visible = useMemo(
     () =>
@@ -154,13 +164,14 @@ export function TablesPage({
             {visible.map((table) => {
               const count = activeItems(table).length
               const bill = billRequested(table)
+              const idle = idleAlert(table, limit, now)
               return (
                 <button
                   key={table.id}
                   type="button"
                   onClick={() => navigate(`/mesas/${table.id}`)}
                   className={`flex flex-col items-start rounded-2xl bg-[var(--surface)] p-3.5 text-left shadow-[var(--card-shadow)] ring-2 transition active:scale-[0.98] ${
-                    bill ? 'ring-[var(--red-500)]' : count > 0 ? 'ring-[var(--green-600)]' : 'ring-[var(--amber-500)]'
+                    bill || idle ? 'ring-[var(--red-500)]' : count > 0 ? 'ring-[var(--green-600)]' : 'ring-[var(--amber-500)]'
                   }`}
                 >
                   <div className="flex w-full items-start justify-between">
@@ -176,8 +187,15 @@ export function TablesPage({
                   </span>
                   <span className="text-[11.5px] text-[var(--muted)]">
                     {count > 0 ? `${count} ${count === 1 ? 'item' : 'itens'} · ` : ''}
-                    {timeAgo(lastActivity(table))}
+                    {formatMinutes(minutesSince(table.opened_at, now))} de casa
                   </span>
+                  {idle ? (
+                    <span className="mt-1.5 rounded-full bg-[var(--red-500)] px-2 py-0.5 text-[10.5px] font-extrabold text-white">
+                      ⚠ {formatMinutes(idle)} sem pedir
+                    </span>
+                  ) : count > 0 ? (
+                    <span className="text-[11px] text-[var(--muted)]">último pedido {timeAgo(lastActivity(table))}</span>
+                  ) : null}
                 </button>
               )
             })}
