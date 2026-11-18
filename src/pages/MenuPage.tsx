@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ScreenHeader } from '../components/ScreenHeader'
+import { ItemOptionsSheet, type ItemOptionsResult } from '../components/ItemOptionsSheet'
 import { cartCount, cartTotal, loadCart, saveCart } from '../lib/cart'
 import { fetchMenu, sendOrder, type CartLine, type FoodTable, type Menu, type MenuProduct } from '../lib/food'
 import { ApiError } from '../lib/api'
@@ -33,6 +34,19 @@ export function MenuPage({ session, company, person, table, onRefresh, navigate 
   const [reviewOpen, setReviewOpen] = useState(false)
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [optionsFor, setOptionsFor] = useState<MenuProduct | null>(null)
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 1400)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  function added(text: string) {
+    setToast({ id: Date.now(), text })
+    navigator.vibrate?.(12)
+  }
 
   useEffect(() => {
     if (menu) return
@@ -84,14 +98,55 @@ export function MenuPage({ session, company, person, table, onRefresh, navigate 
     })
   }, [menu, query, categoryId])
 
-  const quantityOf = (productId: string) =>
+  const hasOptions = (product: MenuProduct) => (product.complements?.length ?? 0) > 0
+
+  // Produto simples: só a linha sem observação; com adicionais: todas as linhas dele.
+  const quantityOf = (product: MenuProduct) =>
     cart
-      .filter((line) => line.product_id === productId && !line.observation)
+      .filter((line) => line.product_id === product.id && (hasOptions(product) || (!line.observation && !line.options)))
       .reduce((sum, line) => sum + line.quantity, 0)
+
+  function tapProduct(product: MenuProduct) {
+    if (hasOptions(product)) {
+      setOptionsFor(product)
+      return
+    }
+    changeQuantity(product, 1)
+    added(`${product.name} adicionado`)
+  }
+
+  function addWithOptions(product: MenuProduct, result: ItemOptionsResult) {
+    mutateCart((previous) => {
+      const index = previous.findIndex(
+        (line) =>
+          line.product_id === product.id &&
+          (line.options ?? '') === result.options &&
+          line.observation === result.observation &&
+          line.unit_price === result.unitPrice
+      )
+      if (index >= 0) {
+        return previous.map((line, i) => (i === index ? { ...line, quantity: line.quantity + result.quantity } : line))
+      }
+      return [
+        ...previous,
+        {
+          product_id: product.id,
+          code: String(product.code ?? ''),
+          name: product.name,
+          unit_price: result.unitPrice,
+          quantity: result.quantity,
+          observation: result.observation,
+          options: result.options || undefined,
+        },
+      ]
+    })
+    setOptionsFor(null)
+    added(`${result.quantity}x ${product.name} adicionado`)
+  }
 
   function changeQuantity(product: MenuProduct, delta: number) {
     mutateCart((previous) => {
-      const index = previous.findIndex((line) => line.product_id === product.id && !line.observation)
+      const index = previous.findIndex((line) => line.product_id === product.id && !line.observation && !line.options)
       if (index === -1) {
         if (delta <= 0) return previous
         return [
@@ -192,44 +247,54 @@ export function MenuPage({ session, company, person, table, onRefresh, navigate 
         ) : filtered.length === 0 ? (
           <p className="px-6 py-16 text-center text-[14px] text-[var(--ink-soft)]">Nenhum produto encontrado.</p>
         ) : (
-          <ul className="divide-y divide-[var(--border)] bg-[var(--surface)]">
+          <ul className="flex flex-col gap-2 px-3 pt-3">
             {filtered.map((product) => {
-              const quantity = quantityOf(product.id)
+              const quantity = quantityOf(product)
+              const options = hasOptions(product)
               return (
-                <li key={product.id} className="flex items-center gap-3 px-3 py-2.5">
-                  {product.image_url && (
-                    <img
-                      src={product.image_url}
-                      alt=""
-                      loading="lazy"
-                      className="h-14 w-14 flex-none rounded-xl object-cover"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[14.5px] leading-snug font-bold text-[var(--ink)]">{product.name}</p>
-                    <p className="text-[13px] font-extrabold text-[var(--green-600)]">
-                      {formatCurrency(product.sale_value)}
-                    </p>
-                  </div>
-                  <div className="flex flex-none items-center gap-1.5">
-                    {quantity > 0 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => changeQuantity(product, -1)}
-                          aria-label="Diminuir"
-                          className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--page)] text-[var(--blue-500)] active:bg-[var(--blue-100)]"
-                        >
-                          <MinusIcon className="h-5 w-5" />
-                        </button>
-                        <span className="w-6 text-center text-[16px] font-extrabold">{quantity}</span>
-                      </>
+                <li
+                  key={product.id}
+                  className={`flex items-center gap-3 rounded-2xl bg-[var(--surface)] p-2.5 pr-3 shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 transition ${
+                    quantity > 0 ? 'ring-[var(--blue-300)]' : 'ring-[var(--border)]'
+                  }`}
+                >
+                  <button type="button" onClick={() => tapProduct(product)} className="flex min-w-0 flex-1 items-center gap-3 text-left active:opacity-70">
+                    {product.image_url ? (
+                      <img src={product.image_url} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-xl object-cover" />
+                    ) : (
+                      <span className="flex h-16 w-16 flex-none items-center justify-center rounded-xl bg-[var(--blue-100)] text-[20px] font-extrabold text-[var(--blue-700)]">
+                        {product.name.trim().charAt(0).toUpperCase()}
+                      </span>
                     )}
+                    <span className="min-w-0 flex-1">
+                      <span className="line-clamp-2 text-[15px] leading-snug font-bold text-[var(--ink)]">{product.name}</span>
+                      <span className="mt-0.5 flex items-center gap-2">
+                        <span className="text-[14px] font-extrabold text-[var(--green-600)]">{formatCurrency(product.sale_value)}</span>
+                        {options && (
+                          <span className="rounded-full bg-[var(--amber-100)] px-2 py-0.5 text-[10.5px] font-extrabold text-[var(--amber-500)]">
+                            MONTE O SEU
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </button>
+                  <div className="flex flex-none items-center gap-1.5">
+                    {quantity > 0 && !options && (
+                      <button
+                        type="button"
+                        onClick={() => changeQuantity(product, -1)}
+                        aria-label="Diminuir"
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--page)] text-[var(--blue-500)] active:bg-[var(--blue-100)]"
+                      >
+                        <MinusIcon className="h-5 w-5" />
+                      </button>
+                    )}
+                    {quantity > 0 && <span key={quantity} className="pop w-6 text-center text-[16px] font-extrabold">{quantity}</span>}
                     <button
                       type="button"
-                      onClick={() => changeQuantity(product, 1)}
+                      onClick={() => tapProduct(product)}
                       aria-label={`Adicionar ${product.name}`}
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--blue-500)] text-white active:bg-[var(--blue-700)]"
+                      className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--blue-500)] text-white shadow-md shadow-[var(--blue-500)]/30 active:scale-90 active:bg-[var(--blue-700)]"
                     >
                       <PlusIcon className="h-5 w-5" />
                     </button>
@@ -248,11 +313,24 @@ export function MenuPage({ session, company, person, table, onRefresh, navigate 
             onClick={() => setReviewOpen(true)}
             className="pointer-events-auto mx-auto flex h-14 w-full max-w-[560px] items-center justify-between rounded-full bg-[var(--blue-500)] px-6 text-white shadow-xl"
           >
-            <span className="text-[14.5px] font-bold">
-              Revisar pedido · {count} {count === 1 ? 'item' : 'itens'}
+            <span className="flex items-center gap-2.5 text-[14.5px] font-bold">
+              <span key={count} className="pop flex h-7 min-w-7 items-center justify-center rounded-full bg-white/25 px-1.5 text-[13px] font-extrabold">
+                {count}
+              </span>
+              Revisar pedido
             </span>
             <span className="text-[15px] font-extrabold">{formatCurrency(cartTotal(cart))}</span>
           </button>
+        </div>
+      )}
+
+      {optionsFor && (
+        <ItemOptionsSheet product={optionsFor} onClose={() => setOptionsFor(null)} onConfirm={(result) => addWithOptions(optionsFor, result)} />
+      )}
+
+      {toast && (
+        <div key={toast.id} className="toast pointer-events-none fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[60] flex justify-center px-4">
+          <span className="rounded-full bg-[var(--ink)] px-4 py-2.5 text-[13.5px] font-bold text-[var(--surface)] shadow-xl">✓ {toast.text}</span>
         </div>
       )}
 
@@ -274,6 +352,7 @@ export function MenuPage({ session, company, person, table, onRefresh, navigate 
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-[14.5px] leading-snug font-bold text-[var(--ink)]">{line.name}</p>
+                      {line.options && <p className="mt-0.5 text-[12.5px] leading-snug text-[var(--ink-soft)]">{line.options}</p>}
                       <p className="text-[12.5px] text-[var(--muted)]">{formatCurrency(line.unit_price)} cada</p>
                     </div>
                     <div className="flex flex-none items-center gap-1 rounded-full bg-[var(--page)] p-0.5">

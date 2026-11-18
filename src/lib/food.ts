@@ -241,6 +241,15 @@ export interface CartLine {
   unit_price: number
   quantity: number
   observation: string
+  // Adicionais escolhidos ("Ponto: Ao ponto | Adicionais: Bacon"); o preço deles já está em unit_price.
+  options?: string
+}
+
+// Texto que vai para a cozinha: adicionais + observação (mesmo formato do cardápio online e do PDV).
+export function lineObservation(line: CartLine): string {
+  const note = line.observation.trim()
+  if (!line.options) return note
+  return [line.options, note ? `Obs: ${note}` : ''].filter(Boolean).join(' | ').slice(0, 255)
 }
 
 // Abre uma mesa nova (vazia). O servidor só grava as mesas que o app manda.
@@ -283,7 +292,7 @@ export function sendOrder(token: string, companyId: string, table: FoodTable, li
     total: line.unit_price * line.quantity,
     removed: false,
     pending_print: true,
-    observation: line.observation || undefined,
+    observation: lineObservation(line) || undefined,
     author: author.id,
     author_name: author.name,
     moment,
@@ -292,7 +301,7 @@ export function sendOrder(token: string, companyId: string, table: FoodTable, li
   const audit = lines.map((line) =>
     auditEntry(
       author,
-      `LANÇOU ${line.quantity} ${line.name}${line.observation ? ` (${line.observation})` : ''}`,
+      `LANÇOU ${line.quantity} ${line.name}${lineObservation(line) ? ` (${lineObservation(line)})` : ''}`,
       'default'
     )
   )
@@ -449,6 +458,22 @@ export interface MenuProduct {
   unit: string | null
   image_url: string | null
   category_ids: string[]
+  complements?: MenuComplement[]
+}
+
+export interface MenuComplementOption {
+  id: string
+  description: string
+  sale_value: number
+}
+
+export interface MenuComplement {
+  id: string
+  name: string
+  required: boolean
+  minimum: number
+  maximum: number
+  options: MenuComplementOption[]
 }
 
 export interface Menu {
