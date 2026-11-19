@@ -61,6 +61,11 @@ export interface FoodTable {
   isDelivery: boolean
   // Nome do cliente colocado no PDV para identificar a mesa
   customerName: string | null
+  // 'delivery' = delivery lançado no PDV ou no garçom (cliente sem app de delivery)
+  kind: 'table' | 'delivery'
+  customerPhone: string | null
+  deliveryAddress: string | null
+  deliveryFee: number
 }
 
 export const DELIVERY_TABLE_MIN = 9000
@@ -144,6 +149,10 @@ export function normalizeRemoteTable(raw: any): FoodTable {
     })),
     isDelivery: raw.kind === 'delivery' || Boolean(delivery) || (number >= DELIVERY_TABLE_MIN && number <= DELIVERY_TABLE_MAX),
     customerName: raw.customer_name || null,
+    kind: raw.kind === 'delivery' ? 'delivery' : 'table',
+    customerPhone: raw.customer_phone || null,
+    deliveryAddress: raw.delivery_address || null,
+    deliveryFee: Number(raw.delivery_fee || 0),
   }
 }
 
@@ -160,7 +169,13 @@ export function tablePartialTotal(table: FoodTable): number {
 }
 
 export function tableRemaining(table: FoodTable): number {
-  return Math.max(0, Math.round((tableSubtotal(table) - tablePartialTotal(table)) * 100) / 100)
+  return Math.max(0, Math.round((tableSubtotal(table) + table.deliveryFee - tablePartialTotal(table)) * 100) / 100)
+}
+
+// "Mesa 12" ou "Delivery 3" (os deliverys lançados no PDV/garçom são numerados a partir de 9001).
+export function tableLabel(table: Pick<FoodTable, 'number' | 'kind'>): string {
+  if (table.kind === 'delivery') return `Delivery ${table.number > 9000 ? table.number - 9000 : table.number}`
+  return `Mesa ${table.number}`
 }
 
 // "CONTA SOLICITADA" depois do último lançamento = o cliente já pediu a conta.
@@ -214,12 +229,20 @@ export async function fetchTables(token: string, companyId: string): Promise<Foo
   const raw = await apiGet<unknown[]>('/food/sync/pull', { companyId }, token)
   return (Array.isArray(raw) ? raw : [])
     .map(normalizeRemoteTable)
-    .filter((table) => !table.isDelivery && (table.status === 'open_empty' || table.status === 'open_with_items'))
+    // Delivery do cardápio/iFood fica no PDV; o lançado à mão (PDV ou garçom) aparece aqui também.
+    .filter(
+      (table) =>
+        (!table.isDelivery || table.kind === 'delivery') && (table.status === 'open_empty' || table.status === 'open_with_items')
+    )
     .sort((a, b) => a.number - b.number)
 }
 
 interface SyncPayload {
   customer_name?: string | null
+  kind?: 'table' | 'delivery'
+  customer_phone?: string | null
+  delivery_address?: string | null
+  delivery_fee?: number
   device_id: string
   source: 'garcom'
   id: string
@@ -303,6 +326,10 @@ export async function openTable(token: string, companyId: string, number: number
     status: 'open_empty',
     closed_at: null,
     customerName: null,
+    kind: 'table',
+    customerPhone: null,
+    deliveryAddress: null,
+    deliveryFee: 0,
     items: [],
     orders: [],
     partials: [],
@@ -310,6 +337,67 @@ export async function openTable(token: string, companyId: string, number: number
     audit: [],
     isDelivery: false,
   }
+}
+
+export interface DeliveryInfo {
+  customerName: string
+  customerPhone: string
+  deliveryAddress: string
+  deliveryFee: number
+}
+
+// Delivery lançado pelo garçom (cliente sem app de delivery): numeração própria a partir de 9001.
+export async function openDelivery(
+  token: string,
+  companyId: string,
+  openTables: FoodTable[],
+  info: DeliveryInfo,
+  author: Author
+): Promise<FoodTable> {
+  const used = new Set(openTables.map((table) => table.number))
+  let number = 9001
+  while (used.has(number) && number < 9999) number++
+  const table = { id: newId(), number, opened_at: nowIso() }
+  await syncTable(token, companyId, {
+    ...basePayload(table, companyId),
+    status: 'open_empty',
+    kind: 'delivery',
+    customer_name: info.customerName || null,
+    customer_phone: info.customerPhone || null,
+    delivery_address: info.deliveryAddress || null,
+    delivery_fee: info.deliveryFee,
+    audit: [auditEntry(author, `NOVO DELIVERY ${number - 9000}${info.customerName ? ` - ${info.customerName}` : ''}`, 'default')],
+  })
+  return {
+    ...table,
+    status: 'open_empty',
+    closed_at: null,
+    customerName: info.customerName || null,
+    kind: 'delivery',
+    customerPhone: info.customerPhone || null,
+    deliveryAddress: info.deliveryAddress || null,
+    deliveryFee: info.deliveryFee,
+    items: [],
+    orders: [],
+    partials: [],
+    sales: [],
+    audit: [],
+    isDelivery: true,
+  }
+}
+
+// Dados do cliente e da entrega (delivery) depois de aberto.
+export function setDeliveryInfo(token: string, companyId: string, table: FoodTable, info: DeliveryInfo, author: Author) {
+  return syncTable(token, companyId, {
+    ...basePayload(table, companyId),
+    status: activeItems(table).length > 0 ? 'open_with_items' : 'open_empty',
+    kind: 'delivery',
+    customer_name: info.customerName || null,
+    customer_phone: info.customerPhone || null,
+    delivery_address: info.deliveryAddress || null,
+    delivery_fee: info.deliveryFee,
+    audit: [auditEntry(author, `ALTEROU DADOS DA ENTREGA (taxa R$ ${info.deliveryFee.toFixed(2).replace('.', ',')})`, 'default')],
+  })
 }
 
 // Lança um pedido (vários itens de uma vez): 1 pedido + os itens ligados a ele.

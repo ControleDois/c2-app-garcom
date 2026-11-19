@@ -9,6 +9,7 @@ import {
   tableRemaining,
   tableSubtotal,
   activeItems,
+  tableLabel,
   type FoodTable,
   type TablePayment,
 } from '../lib/food'
@@ -102,7 +103,7 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ScreenHeader title={`Fechar mesa ${current.number}`} onBack={() => navigate(`/mesas/${current.id}`)} />
+      <ScreenHeader title={`Fechar ${tableLabel(current).toLowerCase()}`} onBack={() => navigate(`/mesas/${current.id}`)} />
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <div className="rounded-2xl bg-[var(--surface)] p-4 shadow-[var(--card-shadow)]">
@@ -110,6 +111,12 @@ export function CheckoutPage({ session, company, person, table, onRefresh, navig
             <span className="text-[var(--ink-soft)]">Consumo</span>
             <span className="font-semibold">{formatCurrency(subtotal)}</span>
           </div>
+          {current.deliveryFee > 0 && (
+            <div className="mt-1 flex justify-between text-[14px]">
+              <span className="text-[var(--ink-soft)]">Taxa de entrega</span>
+              <span className="font-semibold">{formatCurrency(current.deliveryFee)}</span>
+            </div>
+          )}
           {partial > 0 && (
             <div className="mt-1 flex justify-between text-[14px]">
               <span className="text-[var(--ink-soft)]">Já recebido</span>

@@ -11,6 +11,9 @@ import {
   minutesSince,
   requestBill,
   setTableName,
+  setDeliveryInfo,
+  tableLabel,
+  type DeliveryInfo,
   tablePartialTotal,
   tableRemaining,
   tableSubtotal,
@@ -19,7 +22,8 @@ import {
 } from '../lib/food'
 import { ApiError } from '../lib/api'
 import { formatCurrency, formatTime } from '../lib/format'
-import { ChevronDownIcon, ClockIcon, TrashIcon } from '../components/icons'
+import { ChevronDownIcon, ClockIcon, TrashIcon, TruckIcon } from '../components/icons'
+import { DeliveryInfoSheet } from '../components/DeliveryInfoSheet'
 import type { MyPerson } from '../lib/people'
 import type { AuthCompany, AuthSession } from '../lib/auth'
 
@@ -147,7 +151,7 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ScreenHeader
-        title={`Mesa ${current.number}${current.customerName ? ` · ${current.customerName}` : ''}`}
+        title={`${tableLabel(current)}${current.customerName ? ` · ${current.customerName}` : ''}`}
         subtitle={items.length ? `${items.length} ${items.length === 1 ? 'item' : 'itens'}` : 'Sem itens'}
         onBack={() => navigate('/mesas', { replace: true })}
         right={
@@ -165,13 +169,29 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
               }}
               className="rounded-full bg-[var(--blue-100)] px-3 py-1.5 text-[12px] font-extrabold text-[var(--blue-700)] active:opacity-70"
             >
-              {current.customerName ? 'Editar nome' : '+ Nome'}
+              {current.kind === 'delivery' ? 'Editar entrega' : current.customerName ? 'Editar nome' : '+ Nome'}
             </button>
           </div>
         }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {current.kind === 'delivery' && (
+          <button
+            type="button"
+            onClick={() => setNameOpen(true)}
+            className="mx-3 mt-3 flex w-[calc(100%-1.5rem)] items-start gap-2.5 rounded-2xl bg-violet-100 px-4 py-3 text-left text-violet-800 active:opacity-80"
+          >
+            <TruckIcon className="mt-0.5 h-4 w-4 flex-none" />
+            <span className="min-w-0 flex-1 text-[13px] leading-snug">
+              <b>Entrega:</b> {current.deliveryAddress || 'sem endereço'}
+              {current.customerPhone ? (
+                <span className="block">Tel: {current.customerPhone.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3')}</span>
+              ) : null}
+              <span className="block font-bold">Taxa de entrega: {formatCurrency(current.deliveryFee)}</span>
+            </span>
+          </button>
+        )}
         <div className="grid grid-cols-3 gap-2 p-3 pb-0">
           <div className="rounded-2xl bg-[var(--surface)] px-3 py-2.5 shadow-[var(--card-shadow)]">
             <p className="text-[11px] font-semibold text-[var(--muted)]">Chegou</p>
@@ -267,6 +287,12 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
               <span className="text-[var(--ink-soft)]">Consumo</span>
               <span className="font-semibold">{formatCurrency(subtotal)}</span>
             </div>
+            {current.deliveryFee > 0 && (
+              <div className="flex justify-between">
+                <span className="text-[var(--ink-soft)]">Taxa de entrega</span>
+                <span className="font-semibold">{formatCurrency(current.deliveryFee)}</span>
+              </div>
+            )}
             {partial > 0 && (
               <div className="flex justify-between">
                 <span className="text-[var(--ink-soft)]">Já recebido</span>
@@ -370,7 +396,28 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
         </div>
       )}
 
-      {nameOpen && (
+      {nameOpen && current.kind === 'delivery' && (
+        <DeliveryInfoSheet
+          title={`Dados do ${tableLabel(current)}`}
+          confirmLabel="Salvar"
+          busy={busy}
+          error={error}
+          initial={{
+            customerName: current.customerName ?? '',
+            customerPhone: current.customerPhone ?? '',
+            deliveryAddress: current.deliveryAddress ?? '',
+            deliveryFee: current.deliveryFee,
+          }}
+          onClose={() => setNameOpen(false)}
+          onConfirm={async (info: DeliveryInfo) => {
+            if (!author) return
+            const ok = await run(() => setDeliveryInfo(session.token.token, company.id, current, info, author), 'Dados da entrega salvos.')
+            if (ok) setNameOpen(false)
+          }}
+        />
+      )}
+
+      {nameOpen && current.kind !== 'delivery' && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={() => setNameOpen(false)}>
           <form
             className="w-full max-w-[460px] rounded-t-3xl bg-[var(--surface)] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-3xl"
@@ -427,7 +474,7 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
             <h2 className="text-[16px] font-extrabold text-[var(--ink)]">
               {dialog.kind === 'cancel-item'
                 ? `Cancelar ${dialog.item.quantity}x ${dialog.item.name}?`
-                : `Cancelar a mesa ${current.number}?`}
+                : `Cancelar ${current.kind === 'delivery' ? 'o' : 'a'} ${tableLabel(current).toLowerCase()}?`}
             </h2>
             <p className="mt-1 text-[12.5px] text-[var(--ink-soft)]">
               Informe o motivo — fica registrado no histórico da mesa.

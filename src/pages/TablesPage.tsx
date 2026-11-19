@@ -6,6 +6,9 @@ import {
   idleAlert,
   lastActivity,
   minutesSince,
+  openDelivery,
+  tableLabel,
+  type DeliveryInfo,
   openTable,
   tableRemaining,
   tableSubtotal,
@@ -13,13 +16,15 @@ import {
 } from '../lib/food'
 import { ApiError } from '../lib/api'
 import { formatCurrency, timeAgo } from '../lib/format'
-import { RefreshIcon } from '../components/icons'
+import { RefreshIcon, TruckIcon } from '../components/icons'
+import { DeliveryInfoSheet } from '../components/DeliveryInfoSheet'
 import type { AuthCompany, AuthSession } from '../lib/auth'
 
 interface TablesPageProps {
   session: AuthSession
   company: AuthCompany
   personId: string | null
+  personName: string
   tables: FoodTable[]
   loading: boolean
   error: string | null
@@ -31,6 +36,7 @@ export function TablesPage({
   session,
   company,
   personId,
+  personName,
   tables,
   loading,
   error,
@@ -43,6 +49,28 @@ export function TablesPage({
   const [openError, setOpenError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const [deliveryOpen, setDeliveryOpen] = useState(false)
+  const [deliveryBusy, setDeliveryBusy] = useState(false)
+  const [deliveryError, setDeliveryError] = useState<string | null>(null)
+
+  async function handleNewDelivery(info: DeliveryInfo) {
+    if (!personId) {
+      setDeliveryError('Seu usuário não tem cadastro de pessoa nesta empresa.')
+      return
+    }
+    setDeliveryBusy(true)
+    setDeliveryError(null)
+    try {
+      const created = await openDelivery(session.token.token, company.id, tables, info, { id: personId, name: personName })
+      await onRefresh()
+      setDeliveryOpen(false)
+      navigate(`/mesas/${created.id}/cardapio`)
+    } catch (err) {
+      setDeliveryError(err instanceof ApiError ? err.message : 'Não foi possível abrir o delivery.')
+    } finally {
+      setDeliveryBusy(false)
+    }
+  }
   const limit = Number(company.config?.food_table_idle_alert_minutes ?? 30)
 
   useEffect(() => {
@@ -113,6 +141,18 @@ export function TablesPage({
         </form>
         {openError && <p className="mt-2 text-[12.5px] font-medium text-[var(--red-500)]">{openError}</p>}
 
+        <button
+          type="button"
+          onClick={() => {
+            setDeliveryError(null)
+            setDeliveryOpen(true)
+          }}
+          className="mt-2.5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-violet-100 text-[14px] font-extrabold text-violet-700 active:bg-violet-200"
+        >
+          <TruckIcon className="h-4 w-4" />
+          Novo delivery
+        </button>
+
         <div className="mt-3 flex items-center justify-between">
           <div className="flex gap-1.5 rounded-full bg-[var(--page)] p-1">
             {[
@@ -176,7 +216,14 @@ export function TablesPage({
                 >
                   <div className="flex w-full items-start justify-between">
                     <span className="min-w-0">
-                      <span className="block text-[26px] leading-none font-extrabold text-[var(--ink)]">{table.number}</span>
+                      {table.kind === 'delivery' ? (
+                        <span className="flex items-center gap-1.5 text-[20px] leading-none font-extrabold text-violet-700">
+                          <TruckIcon className="h-5 w-5" />
+                          {tableLabel(table)}
+                        </span>
+                      ) : (
+                        <span className="block text-[26px] leading-none font-extrabold text-[var(--ink)]">{table.number}</span>
+                      )}
                       {table.customerName && (
                         <span className="mt-1 block truncate text-[12.5px] font-bold text-[var(--blue-700)]">{table.customerName}</span>
                       )}
@@ -207,6 +254,17 @@ export function TablesPage({
           </div>
         )}
       </div>
+
+      {deliveryOpen && (
+        <DeliveryInfoSheet
+          title="Novo delivery"
+          confirmLabel="Criar e escolher os itens"
+          busy={deliveryBusy}
+          error={deliveryError}
+          onClose={() => setDeliveryOpen(false)}
+          onConfirm={(info) => void handleNewDelivery(info)}
+        />
+      )}
     </div>
   )
 }

@@ -95,6 +95,7 @@ function Salon({
         session={session}
         company={company}
         personId={person?.id ?? null}
+        personName={person?.name ?? ''}
         tables={tables}
         loading={loading}
         error={error}

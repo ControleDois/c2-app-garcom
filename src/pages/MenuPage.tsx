@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ScreenHeader } from '../components/ScreenHeader'
 import { ItemOptionsSheet, type ItemOptionsResult } from '../components/ItemOptionsSheet'
 import { cartCount, cartTotal, loadCart, saveCart } from '../lib/cart'
-import { fetchMenu, sendOrder, type CartLine, type FoodTable, type Menu, type MenuProduct } from '../lib/food'
+import { fetchMenu, sendOrder, tableLabel, type CartLine, type FoodTable, type Menu, type MenuProduct } from '../lib/food'
 import { ApiError } from '../lib/api'
 import { formatCurrency } from '../lib/format'
 import { MinusIcon, PlusIcon, SearchIcon, TrashIcon } from '../components/icons'
@@ -206,7 +206,7 @@ export function MenuPage({ session, company, person, table, onRefresh, navigate 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ScreenHeader
-        title={`Mesa ${table.number}`}
+        title={`${tableLabel(table)}${table.customerName ? ` · ${table.customerName}` : ''}`}
         subtitle="Escolha os itens do pedido"
         onBack={() => navigate(`/mesas/${table.id}`)}
       />
