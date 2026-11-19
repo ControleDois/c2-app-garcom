@@ -10,6 +10,7 @@ import {
   lastOrderAt,
   minutesSince,
   requestBill,
+  setTableName,
   tablePartialTotal,
   tableRemaining,
   tableSubtotal,
@@ -60,6 +61,8 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
     }
   })
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [nameOpen, setNameOpen] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -148,11 +151,23 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
         subtitle={items.length ? `${items.length} ${items.length === 1 ? 'item' : 'itens'}` : 'Sem itens'}
         onBack={() => navigate('/mesas', { replace: true })}
         right={
-          bill ? (
-            <span className="rounded-full bg-[var(--red-100)] px-3 py-1 text-[11px] font-extrabold text-[var(--red-500)]">
-              CONTA PEDIDA
-            </span>
-          ) : undefined
+          <div className="flex items-center gap-1.5">
+            {bill && (
+              <span className="rounded-full bg-[var(--red-100)] px-3 py-1 text-[11px] font-extrabold text-[var(--red-500)]">
+                CONTA PEDIDA
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setNameDraft(current.customerName ?? '')
+                setNameOpen(true)
+              }}
+              className="rounded-full bg-[var(--blue-100)] px-3 py-1.5 text-[12px] font-extrabold text-[var(--blue-700)] active:opacity-70"
+            >
+              {current.customerName ? 'Editar nome' : '+ Nome'}
+            </button>
+          </div>
         }
       />
 
@@ -352,6 +367,51 @@ export function TablePage({ session, company, person, table, loading, onRefresh,
           >
             + Adicionar itens
           </button>
+        </div>
+      )}
+
+      {nameOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={() => setNameOpen(false)}>
+          <form
+            className="w-full max-w-[460px] rounded-t-3xl bg-[var(--surface)] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-3xl"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={async (event) => {
+              event.preventDefault()
+              if (!author) return
+              const ok = await run(
+                () => setTableName(session.token.token, company.id, current, nameDraft, author),
+                nameDraft.trim() ? 'Nome da mesa salvo.' : 'Nome da mesa removido.'
+              )
+              if (ok) setNameOpen(false)
+            }}
+          >
+            <h2 className="text-[16px] font-extrabold text-[var(--ink)]">Nome do cliente da mesa {current.number}</h2>
+            <p className="mt-1 text-[12.5px] text-[var(--ink-soft)]">Aparece no PDV, no app e no papel da cozinha para identificar a mesa.</p>
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={(event) => setNameDraft(event.target.value.slice(0, 120))}
+              placeholder="Ex.: João"
+              className="mt-3 h-12 w-full rounded-xl bg-[var(--page)] px-4 text-[15px] text-[var(--ink)] outline-none focus:ring-2 focus:ring-[var(--blue-300)]"
+            />
+            {error && <p className="mt-3 text-[13px] font-medium text-[var(--red-500)]">{error}</p>}
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setNameOpen(false)}
+                className="h-12 flex-1 rounded-xl border border-[var(--border)] text-[14px] font-bold text-[var(--ink-soft)]"
+              >
+                Voltar
+              </button>
+              <button
+                type="submit"
+                disabled={busy || !author}
+                className="h-12 flex-1 rounded-xl bg-[var(--blue-500)] text-[14px] font-bold text-white disabled:opacity-50"
+              >
+                {busy ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

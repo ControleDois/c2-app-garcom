@@ -219,6 +219,7 @@ export async function fetchTables(token: string, companyId: string): Promise<Foo
 }
 
 interface SyncPayload {
+  customer_name?: string | null
   device_id: string
   source: 'garcom'
   id: string
@@ -405,6 +406,17 @@ export function cancelItem(
       },
     ],
     audit: [auditEntry(author, `CANCELOU ${item.quantity} ${item.name}`, 'danger', reason, requestedByClient)],
+  })
+}
+
+// Nome do cliente para identificar a mesa (aparece no PDV, no garçom e na impressão).
+export function setTableName(token: string, companyId: string, table: FoodTable, name: string, author: Author) {
+  const clean = name.trim().slice(0, 120)
+  return syncTable(token, companyId, {
+    ...basePayload(table, companyId),
+    status: activeItems(table).length > 0 ? 'open_with_items' : 'open_empty',
+    customer_name: clean || null,
+    audit: [auditEntry(author, clean ? `IDENTIFICOU A MESA: ${clean}` : 'TIROU O NOME DA MESA', 'default')],
   })
 }
 
